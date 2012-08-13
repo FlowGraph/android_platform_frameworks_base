@@ -130,6 +130,9 @@ class ServerThread extends Thread {
 
         // Critical services...
         try {
+            Slog.i(TAG, "FlowGraph Service");
+            ServiceManager.addService("flowgraph", new FlowGraphService());
+
             Slog.i(TAG, "Entropy Service");
             ServiceManager.addService("entropy", new EntropyService());
 

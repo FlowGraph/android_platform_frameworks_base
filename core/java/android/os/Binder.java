@@ -18,6 +18,7 @@ package android.os;
 
 import android.util.Config;
 import android.util.Log;
+import android.util.Slog;
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -25,6 +26,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Modifier;
+
+import com.android.internal.os.IFlowGraph;
 
 /**
  * Base class for a remotable object, the core part of a lightweight
@@ -53,6 +56,8 @@ public class Binder implements IBinder {
     private int mObject;
     private IInterface mOwner;
     private String mDescriptor;
+    
+    private IFlowGraph mFlowGraphReference = null;
     
     /**
      * Return the ID of the process that sent you the current transaction
@@ -312,12 +317,29 @@ public class Binder implements IBinder {
             int flags) {
         Parcel data = Parcel.obtain(dataObj);
         Parcel reply = Parcel.obtain(replyObj);
+        
+        // BACHELOR
+        Log.v(TAG, "###COMMUNICATION (Binder RPC request) ###");
+        Log.v(TAG, "From uid: " + Binder.getCallingUid());
+        Log.v(TAG, "To uid:   " + Process.myUid());
+        Log.v(TAG, "Taint tag:" + data.getTaint());
+        
+        preCommunicationHelper(Binder.getCallingPid(), Binder.getCallingUid(), Process.myPid(), Process.myUid(), data.dataSize(), data.getTaint());
         // theoretically, we should call transact, which will call onTransact,
         // but all that does is rewind it, and we just got these from an IPC,
         // so we'll just call it directly.
         boolean res;
         try {
             res = onTransact(code, data, reply, flags);
+            
+            if ((flags & FLAG_ONEWAY) != FLAG_ONEWAY) {
+            	Log.v(TAG, "###COMMUNICATION (Binder RPC reply) ###");
+                Log.v(TAG, "From uid: " + Process.myUid());
+                Log.v(TAG, "To uid:   " + Binder.getCallingUid());
+                Log.v(TAG, "Taint tag:" + reply.getTaint());
+                preCommunicationHelper(Process.myPid(), Process.myUid(), Binder.getCallingPid(), Binder.getCallingUid(), reply.dataSize(), reply.getTaint());
+            }
+            
         } catch (RemoteException e) {
             reply.writeException(e);
             res = true;
@@ -328,6 +350,42 @@ public class Binder implements IBinder {
         reply.recycle();
         data.recycle();
         return res;
+    }
+    
+    private void preCommunicationHelper(int from_pid, int from_uid, int to_pid, int to_uid, int size_in_bytes, int taint_tag) {
+        if (from_uid < 10000 || to_uid < 10000) return;
+    	
+    	try {
+            // don't log own communication 
+            if (getInterfaceDescriptor().equals("com.android.internal.os.IFlowGraph")) {
+                return;
+            }
+            
+            IBinder ags = ServiceManager.getService("flowgraph");
+            if (ags.getClass().getName().equals("com.android.server.FlowGraphService")) {
+                mFlowGraphReference = (IFlowGraph) ags;
+                mFlowGraphReference.preCommunication(from_pid, from_uid, to_pid, to_uid, size_in_bytes, taint_tag);
+            } else {
+                Parcel data = Parcel.obtain();
+                Parcel reply = Parcel.obtain();
+                data.writeInterfaceToken("com.android.internal.os.IFlowGraph");
+                data.writeInt(from_pid);
+                data.writeInt(from_uid);
+                data.writeInt(to_pid);
+                data.writeInt(to_uid);
+                data.writeInt(size_in_bytes);
+                data.writeInt(taint_tag);
+                ags.transact((android.os.IBinder.FIRST_CALL_TRANSACTION + 3), data, reply, 0);
+                reply.recycle();
+                data.recycle();
+            }
+            
+            //mFlowGraphReference = (IAppGraph) ServiceManager.getService("appgraph");
+            //mFlowGraphReference.preCommunication(from_pid, to_pid, size_in_bytes, taint_tag);
+        } catch (Exception e) {
+            Log.e(TAG, "Message: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
 

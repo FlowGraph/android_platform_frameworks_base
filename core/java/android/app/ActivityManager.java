@@ -37,8 +37,8 @@ import java.util.List;
  */
 public class ActivityManager {
     private static String TAG = "ActivityManager";
-    private static boolean DEBUG = false;
-    private static boolean localLOGV = DEBUG || android.util.Config.LOGV;
+    private static boolean DEBUG = true;
+    private static boolean localLOGV = true; /*DEBUG || android.util.Config.LOGV;*/
 
     private final Context mContext;
     private final Handler mHandler;

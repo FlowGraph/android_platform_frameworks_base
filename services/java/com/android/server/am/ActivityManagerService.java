@@ -18,6 +18,7 @@ package com.android.server.am;
 
 import com.android.internal.R;
 import com.android.internal.os.BatteryStatsImpl;
+import com.android.internal.os.IFlowGraph;
 import com.android.server.AttributeCache;
 import com.android.server.IntentResolver;
 import com.android.server.ProcessMap;
@@ -144,21 +145,21 @@ public final class ActivityManagerService extends ActivityManagerNative
     static final String TAG = "ActivityManager";
     static final boolean DEBUG = false;
     static final boolean localLOGV = DEBUG ? Config.LOGD : Config.LOGV;
-    static final boolean DEBUG_SWITCH = localLOGV || false;
-    static final boolean DEBUG_TASKS = localLOGV || false;
+    static final boolean DEBUG_SWITCH = localLOGV || true;
+    static final boolean DEBUG_TASKS = localLOGV || true;
     static final boolean DEBUG_PAUSE = localLOGV || false;
     static final boolean DEBUG_OOM_ADJ = localLOGV || false;
-    static final boolean DEBUG_TRANSITION = localLOGV || false;
-    static final boolean DEBUG_BROADCAST = localLOGV || false;
+    static final boolean DEBUG_TRANSITION = localLOGV || true;
+    static final boolean DEBUG_BROADCAST = localLOGV ||true;
     static final boolean DEBUG_BROADCAST_LIGHT = DEBUG_BROADCAST || false;
-    static final boolean DEBUG_SERVICE = localLOGV || false;
-    static final boolean DEBUG_SERVICE_EXECUTING = localLOGV || false;
+    static final boolean DEBUG_SERVICE = localLOGV || true;
+    static final boolean DEBUG_SERVICE_EXECUTING = localLOGV || true;
     static final boolean DEBUG_VISBILITY = localLOGV || false;
-    static final boolean DEBUG_PROCESSES = localLOGV || false;
+    static final boolean DEBUG_PROCESSES = localLOGV || true;
     static final boolean DEBUG_PROVIDER = localLOGV || false;
     static final boolean DEBUG_URI_PERMISSION = localLOGV || false;
     static final boolean DEBUG_USER_LEAVING = localLOGV || false;
-    static final boolean DEBUG_RESULTS = localLOGV || false;
+    static final boolean DEBUG_RESULTS = localLOGV || true;
     static final boolean DEBUG_BACKUP = localLOGV || false;
     static final boolean DEBUG_CONFIGURATION = localLOGV || false;
     static final boolean DEBUG_POWER = localLOGV || false;
@@ -913,6 +914,8 @@ public final class ActivityManagerService extends ActivityManagerNative
     static ActivityManagerService mSelf;
     static ActivityThread mSystemThread;
 
+    IFlowGraph flowGraphService = null;
+
     private final class AppDeathRecipient implements IBinder.DeathRecipient {
         final ProcessRecord mApp;
         final int mPid;
@@ -1278,6 +1281,7 @@ public final class ActivityManagerService extends ActivityManagerNative
 
         ActivityManagerService m = thr.mService;
         mSelf = m;
+        m.flowGraphService = (IFlowGraph) ServiceManager.getService("flowgraph");
         ActivityThread at = ActivityThread.systemMain();
         mSystemThread = at;
         Context context = at.getSystemContext();
@@ -1888,7 +1892,14 @@ public final class ActivityManagerService extends ActivityManagerNative
             if (app.persistent) {
                 Watchdog.getInstance().processStarted(app.processName, pid);
             }
-            
+
+            try {
+                flowGraphService.spawnProcess(pid, uid);
+                flowGraphService.setProcessName(pid, app.processName);
+            } catch (Exception e) {
+                Slog.w(TAG, "Unable to", e);
+            }
+
             StringBuilder buf = mStringBuilder;
             buf.setLength(0);
             buf.append("Start proc ");
@@ -2658,6 +2669,11 @@ public final class ActivityManagerService extends ActivityManagerNative
             if (!app.killedBackground) {
                 Slog.i(TAG, "Process " + app.processName + " (pid " + pid
                         + ") has died.");
+                try {
+                    flowGraphService.exitProcess(pid, app.info.uid);
+                } catch (Exception e) {
+                    
+                }
             }
             EventLog.writeEvent(EventLogTags.AM_PROC_DIED, app.pid, app.processName);
             if (localLOGV) Slog.v(
@@ -4068,6 +4084,7 @@ public final class ActivityManagerService extends ActivityManagerNative
      */
     int checkComponentPermission(String permission, int pid, int uid,
             int reqUid) {
+        Log.w(TAG, "checkComponentPermission(" + permission + ", " + pid + ", " + uid + ", " + reqUid + ")");
         // We might be performing an operation on behalf of an indirect binder
         // invocation, e.g. via {@link #openContentUri}.  Check and adjust the
         // client identity accordingly before proceeding.
@@ -4093,8 +4110,10 @@ public final class ActivityManagerService extends ActivityManagerNative
             return PackageManager.PERMISSION_GRANTED;
         }
         try {
-            return AppGlobals.getPackageManager()
+            int ret = AppGlobals.getPackageManager()
                     .checkUidPermission(permission, uid);
+            //Log.w(TAG, "    return " + ret);
+            return ret;
         } catch (RemoteException e) {
             // Should never happen, but if it does... deny!
             Slog.e(TAG, "PackageManager is dead?!?", e);
@@ -4112,6 +4131,7 @@ public final class ActivityManagerService extends ActivityManagerNative
      * This can be called with or without the global lock held.
      */
     public int checkPermission(String permission, int pid, int uid) {
+        //Log.w(TAG, "checkPermission(" + permission + ", " + pid + ", " + ", " + uid + ")");
         if (permission == null) {
             return PackageManager.PERMISSION_DENIED;
         }
@@ -4123,9 +4143,11 @@ public final class ActivityManagerService extends ActivityManagerNative
      * This can be called with or without the global lock held.
      */
     int checkCallingPermission(String permission) {
-        return checkPermission(permission,
+        int ret = checkPermission(permission,
                 Binder.getCallingPid(),
                 Binder.getCallingUid());
+        //if (Binder.getCallingPid() !=  Log.w(TAG, "checkCallingPermission(" + permission + "), return " + ret);
+        return ret;
     }
 
     /**
@@ -8736,6 +8758,7 @@ public final class ActivityManagerService extends ActivityManagerNative
             // If service is not currently running, can't yet bind.
             return false;
         }
+        Log.w(TAG, "requestServiceBindingLocked(): " + r + ", " + i + ", " + rebind);
         if ((!i.requested || rebind) && i.apps.size() > 0) {
             try {
                 bumpServiceExecutingLocked(r, "bind");
@@ -10471,6 +10494,11 @@ public final class ActivityManagerService extends ActivityManagerNative
         synchronized(this) {
             intent = verifyBroadcastLocked(intent);
             
+            int calling_pid = Binder.getCallingPid();
+            int calling_uid = Binder.getCallingUid();
+            
+            Log.w(TAG, "broadcastIntent by " + calling_pid + " (UID = " + calling_uid + ")");
+            
             final ProcessRecord callerApp = getRecordForAppLocked(caller);
             final int callingPid = Binder.getCallingPid();
             final int callingUid = Binder.getCallingUid();
@@ -10765,6 +10793,17 @@ public final class ActivityManagerService extends ActivityManagerNative
                     "Delivering to component " + r.curComponent
                     + ": " + r);
             ensurePackageDexOpt(r.intent.getComponent().getPackageName());
+            
+        	Parcel intentParcel = Parcel.obtain();
+        	intentParcel.writeParcelable(r.intent, 0);
+        	
+        	Slog.v(TAG, "###COMMUNICATION (broadcast intent) ###");
+            Slog.v(TAG, "From uid: " + r.callingUid);
+            Slog.v(TAG, "To uid:   " + app.info.uid);
+            Slog.v(TAG, "Taint tag:" + intentParcel.getTaint());
+        	
+            //Slog.v(TAG, "Broadcast message from " + r.callingUid + " to " + app.info.uid + " of size: " + intentParcel.dataSize());
+            flowGraphService.preCommunication(r.callingPid, r.callingUid, app.pid, app.info.uid, intentParcel.dataSize(), intentParcel.getTaint());
             app.thread.scheduleReceiver(new Intent(r.intent), r.curReceiver,
                     r.resultCode, r.resultData, r.resultExtras, r.ordered);
             if (DEBUG_BROADCAST)  Slog.v(TAG,

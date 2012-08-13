@@ -18,6 +18,7 @@ package com.android.server.am;
 
 import com.android.internal.app.HeavyWeightSwitcherActivity;
 import com.android.internal.os.BatteryStatsImpl;
+import com.android.server.FlowGraphService;
 import com.android.server.am.ActivityManagerService.PendingActivityLaunch;
 
 import android.app.Activity;
@@ -52,6 +53,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.os.Parcel;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
@@ -1272,6 +1274,12 @@ public class ActivityStack {
                         if (DEBUG_RESULTS) Slog.v(
                                 TAG, "Delivering results to " + next
                                 + ": " + a);
+                        
+                        /*Slog.v(TAG, "From PID: " + next.getCallingPid());
+                        Slog.v(TAG, "From UID: " + next.getCallingUid());
+                        Slog.v(TAG, "To PID: " + next.app.pid);
+                        Slog.v(TAG, "To UID: " + next.app.info.uid);*/
+                        //FlowGraphService.preCommunicationHelper(next.app.);
                         next.app.thread.scheduleSendResult(next, a);
                     }
                 }
@@ -1897,12 +1905,12 @@ public class ActivityStack {
                 err = START_PERMISSION_DENIED;
             }
         }
-
+        
         if (err == START_SUCCESS) {
             Slog.i(TAG, "Starting: " + intent + " from pid "
                     + (callerApp != null ? callerApp.pid : callingPid));
         }
-
+        
         ActivityRecord sourceRecord = null;
         ActivityRecord resultRecord = null;
         if (resultTo != null) {
@@ -1957,6 +1965,14 @@ public class ActivityStack {
             return err;
         }
 
+        Parcel intentParcel = Parcel.obtain();
+    	intentParcel.writeParcelable(intent, 0);
+    	Slog.v(TAG, "###COMMUNICATION (activity starting intent) ###");
+        Slog.v(TAG, "From uid: " + callingUid);
+        Slog.v(TAG, "To uid:   " + (aInfo.applicationInfo.uid));
+        Slog.v(TAG, "Taint tag:" + intentParcel.getTaint());
+        FlowGraphService.preCommunicationHelper(callingPid, callingUid, -1, aInfo.applicationInfo.uid, intentParcel.dataSize(), intentParcel.getTaint());
+        
         final int perm = mService.checkComponentPermission(aInfo.permission, callingPid,
                 callingUid, aInfo.exported ? -1 : aInfo.applicationInfo.uid);
         if (perm != PackageManager.PERMISSION_GRANTED) {
@@ -2347,6 +2363,8 @@ public class ActivityStack {
             // An existing activity is starting this new activity, so we want
             // to keep the new one in the same task as the one that is starting
             // it.
+            //Slog.v("TAG", "r.app.info.uid: " + r.app.info.uid);
+            Slog.v("TAG", "callingUid:     " + callingUid);
             r.task = sourceRecord.task;
             if (DEBUG_TASKS) Slog.v(TAG, "Starting new activity " + r
                     + " in existing task " + r.task);
@@ -2925,11 +2943,26 @@ public class ActivityStack {
             if (DEBUG_RESULTS) Slog.v(TAG, "Adding result to " + resultTo
                     + " who=" + r.resultWho + " req=" + r.requestCode
                     + " res=" + resultCode + " data=" + resultData);
+                   
             if (r.info.applicationInfo.uid > 0) {
                 mService.grantUriPermissionFromIntentLocked(r.info.applicationInfo.uid,
                         resultTo.packageName, resultData, 
                         resultTo.getUriPermissionsLocked());
             }
+            
+            //Slog.v(TAG, "Activity on stack: " + index + ", " + (ActivityRecord)mHistory.get(index));
+            //Slog.v(TAG, "Activity on stack: " + (index - 1) + ", " + (ActivityRecord)mHistory.get(index - 1));
+            
+            Parcel intentParcel = Parcel.obtain();
+        	intentParcel.writeParcelable(resultData, 0);
+        	intentParcel.writeInt(resultCode);
+        	
+        	Slog.v(TAG, "###COMMUNICATION (activity result intent) ###");
+            Slog.v(TAG, "From uid: " + r.app.info.uid);
+            Slog.v(TAG, "To uid:   " + ((ActivityRecord)mHistory.get(index - 1)).app.info.uid);
+            Slog.v(TAG, "Taint tag:" + intentParcel.getTaint());
+            FlowGraphService.preCommunicationHelper(r.app.pid, r.app.info.uid, ((ActivityRecord)mHistory.get(index - 1)).app.pid, ((ActivityRecord)mHistory.get(index - 1)).app.info.uid, intentParcel.dataSize(), intentParcel.getTaint());
+          
             resultTo.addResultLocked(r, r.resultWho, r.requestCode, resultCode,
                                      resultData);
             r.resultTo = null;

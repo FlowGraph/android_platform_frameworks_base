@@ -339,11 +339,12 @@ public final class Parcel {
     //public final native byte[] marshall();
     private native byte[] marshallNative();
     public final byte[] marshall() {
+        //Log.w("ParcelJava", "marshall()\n");
     	byte[] data = marshallNative();
     	int tag = getTaint();
     	Taint.addTaintByteArray(data, tag);
-    	//String tstr = "0x" + Integer.toHexString(tag);
-    	//if (tag != 0) Log.w("ParcelJava", "marshall() tag = " + tstr + "\n");
+    	String tstr = "0x" + Integer.toHexString(tag);
+    	if (tag != 0) Log.w("ParcelJava", "marshall() tag = " + tstr + "\n");
     	return data;
     }
     // end WITH_TAINT_TRACKING
@@ -355,10 +356,11 @@ public final class Parcel {
     //public final native void unmarshall(byte[] data, int offset, int length);
     private native void unmarshallNative(byte[] data, int offset, int length);
     public final void unmarshall(byte[] data, int offset, int length) {
+        //Log.w("ParcelJava", "unmarschall()\n");
     	unmarshallNative(data, offset, length); // may throw exception
     	int tag = Taint.getTaintByteArray(data);
-    	//String tstr = "0x" + Integer.toHexString(tag);
-    	//if (tag != 0) Log.w("ParcelJava", "unmarshall() tag = " + tstr + "\n"); 
+    	String tstr = "0x" + Integer.toHexString(tag);
+    	if (tag != 0) Log.w("ParcelJava", "unmarshall() tag = " + tstr + "\n"); 
     	updateTaint(tag);
     }
     // end WITH_TAINT_TRACKING
@@ -2278,6 +2280,6 @@ public final class Parcel {
     
     // begin WITH_TAINT_TRACKING
     private native void updateTaint(int tag);
-    private native int getTaint();
+    public native int getTaint();
     // end WITH_TAINT_TRACKING
 }
