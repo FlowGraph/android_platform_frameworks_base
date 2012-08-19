@@ -41,6 +41,8 @@ import android.util.Pair;
 
 import com.android.server.flowgraph.CommunicationLink;
 
+import dalvik.system.Taint;
+
 public class FlowGraphService extends IFlowGraph.Stub {
 	private static final String TAG = "FlowGraph";
 	
@@ -75,7 +77,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 		}
 	}
 	
-	private static void addCommunicationTraffic(int from_uid, int to_uid, int tag, int bytes) {
+	synchronized private static void addCommunicationTraffic(int from_uid, int to_uid, int tag, int bytes) {
 		assert(running_processes.containsKey(from_uid));
 		assert(running_processes.containsKey(to_uid));
 		
@@ -97,7 +99,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	}
 	
 	// maintanence and dynamic update
-	private static void updateFlowGraph() {		
+	synchronized private static void updateFlowGraph() {		
 		for (Map.Entry<Pair<Integer, Integer>, Map<Integer, CommunicationLink>> entry : communication_links.entrySet()) {
 			List<Integer> links_to_remove = new ArrayList<Integer>();
 			
@@ -158,7 +160,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	}*/
 
 	@Override
-	public void spawnProcess(final int pid, int uid) {
+	synchronized public void spawnProcess(final int pid, int uid) {
 		Log.w(TAG, "Spawn Process (" + pid + ")");
 		
 		if (!running_processes.containsKey(uid)) {
@@ -176,7 +178,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	}
 
 	@Override
-	public void exitProcess(int pid, int uid) {
+	synchronized public void exitProcess(int pid, int uid) {
 		Log.w(TAG, "Exit Process (" + pid + ")");
 		
 		assert(running_processes.containsKey(uid));
@@ -193,7 +195,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	}
 
 	@Override
-	public void setProcessName(int pid, String name) {
+	synchronized public void setProcessName(int pid, String name) {
 		Log.w(TAG, "Process Name (" + pid + "): " + name);
 		process_names.put(pid, name);
 		try {
@@ -207,7 +209,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	}
 	
 	@Override
-	public void preCommunication(int from_pid, int from_uid, int to_pid, int to_uid, int size_in_bytes, int taint_tag) {
+	synchronized public void preCommunication(int from_pid, int from_uid, int to_pid, int to_uid, int size_in_bytes, int taint_tag) {
 	    Log.w(TAG, "Communication from " +from_pid+" (UID="+from_uid+") to " +to_pid+" (UID="+to_uid+") of "+size_in_bytes+" bytes tagged as "+taint_tag+".\n");
 	    
 	    if (taint_tag != 0) {
@@ -229,7 +231,37 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	
 	@Override
 	public String logGraphState() {
-		return "";
+		StringBuilder dotGraph = new StringBuilder(200);
+		dotGraph.append("digraph flowgraphdump {\n");
+		
+		// add UID sandboxes
+		for (Integer uid : running_processes.keySet()) {
+			String sandboxStr = "sandbox_" + uid;
+			dotGraph.append(sandboxStr + " [label=\"UID " + uid + "\"];\n");
+        
+			// add process names to sandboxes
+			for (Integer pid : running_processes.get(uid)) {
+				String pidStr = "processname_" + pid;
+				dotGraph.append(pidStr + " [[shape=box, label=\"" + process_names.get(pid) + "\"];\n");
+				dotGraph.append(sandboxStr + " -> " + pidStr + " [dir=none];\n");
+			}
+		}
+		
+		dotGraph.append("\n /* communication links */ \n");
+		
+		// communication links
+		for (Map.Entry<Pair<Integer, Integer>, Map<Integer, CommunicationLink>> entry : communication_links.entrySet()) {			
+			for (Map.Entry<Integer, CommunicationLink> link : entry.getValue().entrySet()) {
+				CommunicationLink comm_link = link.getValue();
+				String sandboxFrom = "sandbox_" + entry.getKey().first;
+				String sandboxTo = "sandbox_" + entry.getKey().second;
+				dotGraph.append(sandboxFrom + " -> " + sandboxTo + "[label=\" Tag: " + Taint.taintTagToString(link.getKey()) + "\\nThroughput: " + comm_link.getBytes() + " Bytes/min"  + "\"];\n");
+				
+			}
+		}
+		
+		dotGraph.append("}\n");
+		return dotGraph.toString();
 	}
 	
 
