@@ -16,10 +16,12 @@
 
 package android.database;
 
+import dalvik.system.Taint;
 import android.database.sqlite.SQLiteClosable;
 import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.util.SparseArray;
 
 /**
  * A buffer containing multiple cursor rows.
@@ -28,9 +30,27 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     /** The pointer to the native window class */
     @SuppressWarnings("unused")
     private int nWindow;
-
+    private SparseArray<SparseArray<Integer>> mTaints = new SparseArray<SparseArray<Integer>>();
     private int mStartPos;
-
+    
+    void setTaint(int col, int row, int taint) {
+    	SparseArray<Integer> colArray = (SparseArray<Integer>) mTaints.get(col);
+    	if (colArray == null) {
+    		colArray = new SparseArray<Integer>();
+    		mTaints.put(col, colArray);
+    	}
+    	colArray.put(row, Taint.addTaintInt(taint, taint));
+    }
+    
+    int getTaint(int col, int row) {
+    	SparseArray<Integer> colArray = (SparseArray<Integer>) mTaints.get(col);
+    	if (colArray == null) {
+    		return Taint.TAINT_CLEAR;
+    	} else {
+    		return colArray.get(row);
+    	}
+    }
+    
     /**
      * Creates a new empty window.
      *
@@ -38,6 +58,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public CursorWindow(boolean localWindow) {
         mStartPos = 0;
+        mTaints = new SparseArray<SparseArray<Integer>>();
         native_init(localWindow);
     }
 
@@ -129,6 +150,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public boolean putBlob(byte[] value, int row, int col) {
         acquireReference();
+        setTaint(col, row, Taint.getTaintByteArray(value));
         try {
             return putBlob_native(value, row - mStartPos, col);
         } finally {
@@ -147,6 +169,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public boolean putString(String value, int row, int col) {
         acquireReference();
+        setTaint(col, row, Taint.getTaintString(value));
         try {
             return putString_native(value, row - mStartPos, col);
         } finally {
@@ -165,6 +188,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public boolean putLong(long value, int row, int col) {
         acquireReference();
+        setTaint(col, row, Taint.getTaintLong(value));
         try {
             return putLong_native(value, row - mStartPos, col);
         } finally {
@@ -184,6 +208,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public boolean putDouble(double value, int row, int col) {
         acquireReference();
+        setTaint(col, row, Taint.getTaintDouble(value));
         try {
             return putDouble_native(value, row - mStartPos, col);
         } finally {
@@ -201,6 +226,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
      */
     public boolean putNull(int row, int col) {
         acquireReference();
+        setTaint(col, row, 0);
         try {
             return putNull_native(row - mStartPos, col);
         } finally {
@@ -221,7 +247,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public boolean isNull(int row, int col) {
         acquireReference();
         try {
-            return isNull_native(row - mStartPos, col);
+            return Taint.addTaintBoolean(isNull_native(row - mStartPos, col), getTaint(col, row));
         } finally {
             releaseReference();
         }
@@ -239,7 +265,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public byte[] getBlob(int row, int col) {
         acquireReference();
         try {
-            return getBlob_native(row - mStartPos, col);
+        	byte[] ret = getBlob_native(row - mStartPos, col);
+        	Taint.addTaintByteArray(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -257,7 +285,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public boolean isBlob(int row, int col) {
         acquireReference();
         try {
-            return isBlob_native(row - mStartPos, col);
+            return Taint.addTaintBoolean(isBlob_native(row - mStartPos, col), getTaint(col, row));
         } finally {
             releaseReference();
         }
@@ -273,7 +301,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public boolean isLong(int row, int col) {
         acquireReference();
         try {
-            return isInteger_native(row - mStartPos, col);
+            return Taint.addTaintBoolean(isInteger_native(row - mStartPos, col), getTaint(col, row));
         } finally {
             releaseReference();
         }
@@ -289,7 +317,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public boolean isFloat(int row, int col) {
         acquireReference();
         try {
-            return isFloat_native(row - mStartPos, col);
+            return Taint.addTaintBoolean(isFloat_native(row - mStartPos, col), getTaint(col, row));
         } finally {
             releaseReference();
         }
@@ -305,7 +333,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public boolean isString(int row, int col) {
         acquireReference();
         try {
-            return isString_native(row - mStartPos, col);
+            return Taint.addTaintBoolean(isString_native(row - mStartPos, col), getTaint(col, row));
         } finally {
             releaseReference();
         }
@@ -326,7 +354,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public String getString(int row, int col) {
         acquireReference();
         try {
-            return getString_native(row - mStartPos, col);
+            String ret = getString_native(row - mStartPos, col);
+            Taint.addTaintString(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -357,6 +387,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
                     row - mStartPos, col, buffer.data.length, buffer);
             if (newbuf != null) {
                 buffer.data = newbuf;
+                Taint.addTaintCharArray(buffer.data, getTaint(col, row));
             }
         } finally {
             releaseReference();
@@ -365,7 +396,7 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     
     private native char[] copyStringToBuffer_native(
             int row, int col, int bufferSize, CharArrayBuffer buffer);
-    
+
     /**
      * Returns a long for the given field.
      * row is 0 based
@@ -377,7 +408,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public long getLong(int row, int col) {
         acquireReference();
         try {
-            return getLong_native(row - mStartPos, col);
+            long ret = getLong_native(row - mStartPos, col);
+            ret = Taint.addTaintLong(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -396,7 +429,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public double getDouble(int row, int col) {
         acquireReference();
         try {
-            return getDouble_native(row - mStartPos, col);
+            double ret = getDouble_native(row - mStartPos, col);
+            ret = Taint.addTaintDouble(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -415,7 +450,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public short getShort(int row, int col) {
         acquireReference();
         try {
-            return (short) getLong_native(row - mStartPos, col);
+            short ret = (short) getLong_native(row - mStartPos, col);
+            ret = (short)Taint.addTaintInt(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -431,7 +468,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public int getInt(int row, int col) {
         acquireReference();
         try {
-            return (int) getLong_native(row - mStartPos, col);
+            int ret = (int) getLong_native(row - mStartPos, col);
+            ret = (int)Taint.addTaintInt(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -448,7 +487,9 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public float getFloat(int row, int col) {
         acquireReference();
         try {
-            return (float) getDouble_native(row - mStartPos, col);
+            float ret = (float) getDouble_native(row - mStartPos, col);
+            ret = Taint.addTaintFloat(ret, getTaint(col, row));
+            return ret;
         } finally {
             releaseReference();
         }
@@ -462,7 +503,8 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public void clear() {
         acquireReference();
         try {
-            mStartPos = 0;        
+            mStartPos = 0;   
+            mTaints = new SparseArray<SparseArray<Integer>>();
             native_clear();
         } finally {
             releaseReference();
@@ -509,12 +551,13 @@ public class CursorWindow extends SQLiteClosable implements Parcelable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeStrongBinder(native_getBinder());
         dest.writeInt(mStartPos);
+        dest.writeSparseArray((SparseArray)mTaints);
     }
 
     private CursorWindow(Parcel source) {
         IBinder nativeBinder = source.readStrongBinder();
         mStartPos = source.readInt();
-
+        mTaints = source.readSparseArray(null);
         native_init(nativeBinder);
     }
 
