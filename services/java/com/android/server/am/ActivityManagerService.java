@@ -20,6 +20,7 @@ import com.android.internal.R;
 import com.android.internal.os.BatteryStatsImpl;
 import com.android.internal.os.IFlowGraph;
 import com.android.server.AttributeCache;
+import com.android.server.FlowGraphService;
 import com.android.server.IntentResolver;
 import com.android.server.ProcessMap;
 import com.android.server.ProcessStats;
@@ -28,6 +29,7 @@ import com.android.server.Watchdog;
 import com.android.server.WindowManagerService;
 import com.android.server.am.ActivityStack.ActivityState;
 
+import dalvik.system.FlowGraph;
 import dalvik.system.Zygote;
 
 import android.app.Activity;
@@ -149,17 +151,17 @@ public final class ActivityManagerService extends ActivityManagerNative
     static final boolean DEBUG_TASKS = localLOGV || true;
     static final boolean DEBUG_PAUSE = localLOGV || false;
     static final boolean DEBUG_OOM_ADJ = localLOGV || false;
-    static final boolean DEBUG_TRANSITION = localLOGV || true;
+    static final boolean DEBUG_TRANSITION = localLOGV || false;
     static final boolean DEBUG_BROADCAST = localLOGV ||true;
     static final boolean DEBUG_BROADCAST_LIGHT = DEBUG_BROADCAST || false;
-    static final boolean DEBUG_SERVICE = localLOGV || true;
-    static final boolean DEBUG_SERVICE_EXECUTING = localLOGV || true;
+    static final boolean DEBUG_SERVICE = localLOGV || false;
+    static final boolean DEBUG_SERVICE_EXECUTING = localLOGV || false;
     static final boolean DEBUG_VISBILITY = localLOGV || false;
     static final boolean DEBUG_PROCESSES = localLOGV || true;
     static final boolean DEBUG_PROVIDER = localLOGV || false;
     static final boolean DEBUG_URI_PERMISSION = localLOGV || false;
     static final boolean DEBUG_USER_LEAVING = localLOGV || false;
-    static final boolean DEBUG_RESULTS = localLOGV || true;
+    static final boolean DEBUG_RESULTS = localLOGV || false;
     static final boolean DEBUG_BACKUP = localLOGV || false;
     static final boolean DEBUG_CONFIGURATION = localLOGV || false;
     static final boolean DEBUG_POWER = localLOGV || false;
@@ -10797,10 +10799,12 @@ public final class ActivityManagerService extends ActivityManagerNative
         	Parcel intentParcel = Parcel.obtain();
         	intentParcel.writeParcelable(r.intent, 0);
         	
-        	Slog.v(TAG, "###COMMUNICATION (broadcast intent) ###");
-            Slog.v(TAG, "From uid: " + r.callingUid);
-            Slog.v(TAG, "To uid:   " + app.info.uid);
-            Slog.v(TAG, "Taint tag:" + intentParcel.getTaint());
+        	if (FlowGraph.LOG_DETAILS) {
+        		Slog.v(TAG, "###COMMUNICATION (broadcast intent) ###");
+        		Slog.v(TAG, "From uid: " + r.callingUid);
+        		Slog.v(TAG, "To uid:   " + app.info.uid);
+        		Slog.v(TAG, "Taint tag:" + intentParcel.getTaint());
+        	}
         	
             //Slog.v(TAG, "Broadcast message from " + r.callingUid + " to " + app.info.uid + " of size: " + intentParcel.dataSize());
             flowGraphService.preCommunication(r.callingPid, r.callingUid, app.pid, app.info.uid, intentParcel.dataSize(), intentParcel.getTaint());

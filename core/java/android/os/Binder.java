@@ -18,7 +18,6 @@ package android.os;
 
 import android.util.Config;
 import android.util.Log;
-import android.util.Slog;
 
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
@@ -28,6 +27,8 @@ import java.lang.ref.WeakReference;
 import java.lang.reflect.Modifier;
 
 import com.android.internal.os.IFlowGraph;
+
+import dalvik.system.FlowGraph;
 
 /**
  * Base class for a remotable object, the core part of a lightweight
@@ -319,11 +320,12 @@ public class Binder implements IBinder {
         Parcel reply = Parcel.obtain(replyObj);
         
         // BACHELOR
-        Log.v(TAG, "###COMMUNICATION (Binder RPC request) ###");
-        Log.v(TAG, "From uid: " + Binder.getCallingUid());
-        Log.v(TAG, "To uid:   " + Process.myUid());
-        Log.v(TAG, "Taint tag:" + data.getTaint());
-        
+        if (FlowGraph.LOG_DETAILS) {
+        	Log.v(TAG, "###COMMUNICATION (Binder RPC request) ###");
+        	Log.v(TAG, "From uid: " + Binder.getCallingUid());
+        	Log.v(TAG, "To uid:   " + Process.myUid());
+        	Log.v(TAG, "Taint tag:" + data.getTaint());
+        }
         preCommunicationHelper(Binder.getCallingPid(), Binder.getCallingUid(), Process.myPid(), Process.myUid(), data.dataSize(), data.getTaint());
         // theoretically, we should call transact, which will call onTransact,
         // but all that does is rewind it, and we just got these from an IPC,
@@ -333,10 +335,12 @@ public class Binder implements IBinder {
             res = onTransact(code, data, reply, flags);
             
             if ((flags & FLAG_ONEWAY) != FLAG_ONEWAY) {
-            	Log.v(TAG, "###COMMUNICATION (Binder RPC reply) ###");
-                Log.v(TAG, "From uid: " + Process.myUid());
-                Log.v(TAG, "To uid:   " + Binder.getCallingUid());
-                Log.v(TAG, "Taint tag:" + reply.getTaint());
+            	if (FlowGraph.LOG_DETAILS) {
+            		Log.v(TAG, "###COMMUNICATION (Binder RPC reply) ###");
+                	Log.v(TAG, "From uid: " + Process.myUid());
+                	Log.v(TAG, "To uid:   " + Binder.getCallingUid());
+                	Log.v(TAG, "Taint tag:" + reply.getTaint());
+            	}
                 preCommunicationHelper(Process.myPid(), Process.myUid(), Binder.getCallingPid(), Binder.getCallingUid(), reply.dataSize(), reply.getTaint());
             }
             
