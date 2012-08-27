@@ -25,6 +25,7 @@ public class CommunicationLink {
 	
 	public CommunicationLink(int tag, int bytes) {
 		this.tag = tag;
+		bucket[(buckets - 1)] += bytes;
 	}
 	
 	public int getTag() {

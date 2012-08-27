@@ -78,6 +78,7 @@ import android.content.pm.ServiceInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
@@ -147,17 +148,17 @@ public final class ActivityManagerService extends ActivityManagerNative
     static final String TAG = "ActivityManager";
     static final boolean DEBUG = false;
     static final boolean localLOGV = DEBUG ? Config.LOGD : Config.LOGV;
-    static final boolean DEBUG_SWITCH = localLOGV || true;
-    static final boolean DEBUG_TASKS = localLOGV || true;
+    static final boolean DEBUG_SWITCH = localLOGV || false;
+    static final boolean DEBUG_TASKS = localLOGV || false;
     static final boolean DEBUG_PAUSE = localLOGV || false;
     static final boolean DEBUG_OOM_ADJ = localLOGV || false;
     static final boolean DEBUG_TRANSITION = localLOGV || false;
-    static final boolean DEBUG_BROADCAST = localLOGV ||true;
+    static final boolean DEBUG_BROADCAST = localLOGV ||false;
     static final boolean DEBUG_BROADCAST_LIGHT = DEBUG_BROADCAST || false;
     static final boolean DEBUG_SERVICE = localLOGV || false;
     static final boolean DEBUG_SERVICE_EXECUTING = localLOGV || false;
     static final boolean DEBUG_VISBILITY = localLOGV || false;
-    static final boolean DEBUG_PROCESSES = localLOGV || true;
+    static final boolean DEBUG_PROCESSES = localLOGV || false;
     static final boolean DEBUG_PROVIDER = localLOGV || false;
     static final boolean DEBUG_URI_PERMISSION = localLOGV || false;
     static final boolean DEBUG_USER_LEAVING = localLOGV || false;
@@ -2548,6 +2549,12 @@ public final class ActivityManagerService extends ActivityManagerNative
         if (!restarting) {
             mLruProcesses.remove(app);
         }
+        
+        try {
+			if (app.pid != 0) flowGraphService.exitProcess(app.pid, app.info.uid);
+		} catch (RemoteException e) {
+			e.printStackTrace();
+		}
 
         // Just in case...
         if (mMainStack.mPausingActivity != null && mMainStack.mPausingActivity.app == app) {
@@ -2672,10 +2679,10 @@ public final class ActivityManagerService extends ActivityManagerNative
                 Slog.i(TAG, "Process " + app.processName + " (pid " + pid
                         + ") has died.");
                 try {
-                    flowGraphService.exitProcess(pid, app.info.uid);
-                } catch (Exception e) {
-                    
-                }
+					flowGraphService.exitProcess(pid, app.info.uid);
+				} catch (RemoteException e) {
+					e.printStackTrace();
+				}
             }
             EventLog.writeEvent(EventLogTags.AM_PROC_DIED, app.pid, app.processName);
             if (localLOGV) Slog.v(
@@ -4086,7 +4093,7 @@ public final class ActivityManagerService extends ActivityManagerNative
      */
     int checkComponentPermission(String permission, int pid, int uid,
             int reqUid) {
-        Log.w(TAG, "checkComponentPermission(" + permission + ", " + pid + ", " + uid + ", " + reqUid + ")");
+        //Log.w(TAG, "checkComponentPermission(" + permission + ", " + pid + ", " + uid + ", " + reqUid + ")");
         // We might be performing an operation on behalf of an indirect binder
         // invocation, e.g. via {@link #openContentUri}.  Check and adjust the
         // client identity accordingly before proceeding.

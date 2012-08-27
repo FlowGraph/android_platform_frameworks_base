@@ -29,6 +29,7 @@ import com.android.internal.os.IFlowGraph;
 
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.Process;
 import android.util.Log;
 import android.util.Pair;
 
@@ -78,18 +79,43 @@ public class FlowGraphService extends IFlowGraph.Stub {
 		Map<Integer, CommunicationLink> links = null;
 		Pair<Integer, Integer> link_pair = Pair.create(from_uid, to_uid);
 		links = communication_links.get(link_pair);
-		if (links != null) {
-			CommunicationLink comm_link = links.get(tag);
-			if (comm_link != null) {
-				comm_link.addBytes(bytes);
-			} else {
-				links.put(tag, new CommunicationLink(tag, bytes));
-			}
-		} else {
+		if (links == null) {
 			links = new HashMap<Integer, CommunicationLink>();
-			links.put(tag, new CommunicationLink(tag, bytes));
 			communication_links.put(link_pair, links);
 		}
+		
+		CommunicationLink comm_link = links.get(tag);
+			
+		if (comm_link == null) {
+			comm_link = new CommunicationLink(tag, bytes);
+			links.put(tag, comm_link);
+		} else {
+			comm_link.addBytes(bytes);
+		}
+		
+		// CONTACT
+		if (comm_link.getTag() == 0x00000002) {
+			if (comm_link.getBytes() > 1000) {
+				Log.w(TAG, "Communication from " + from_uid + " to " + to_uid + " exceeded limit of 1000 bytes/min. Killing receiving user's processes.");
+				killProcess(to_uid, 0);
+			} else {
+				Log.w(TAG, "Communication from " + from_uid + " to " + to_uid + " throughput at " + comm_link.getBytes() + "bytes/min (Taint: " + comm_link.getTag() + ")");
+			}
+		}
+		
+		// SMS
+		if (comm_link.getTag() == 0x00000200) {
+			if (comm_link.getBytes() > 10000) {
+				Log.w(TAG, "Communication from " + from_uid + " to " + to_uid + " exceeded limit of 5000 bytes/min. Killing receiving user's processes.");
+				killProcess(to_uid, 0);
+			} else {
+				Log.w(TAG, "Communication from " + from_uid + " to " + to_uid + " throughput at " + comm_link.getBytes() + "bytes/min (Taint: " + comm_link.getTag() + ")");
+			}
+		}
+		
+		
+		
+
 	}
 	
 	// maintanence and dynamic update
@@ -124,6 +150,19 @@ public class FlowGraphService extends IFlowGraph.Stub {
         }
     }    
 	
+	private static void killProcess(int uid, int pid) {
+		Log.w(TAG, "kill process: " + uid + " (uid)    " + pid + " (pid)");
+		if (pid != 0) {
+			Log.w(TAG, "\tkilling single process " + pid);
+			Process.killProcess(pid);
+		} else {
+			for (int pid_to_kill : running_processes.get(uid)) {
+				Log.w(TAG, "\tkilling process " + pid_to_kill);
+				Process.killProcess(pid_to_kill);
+			}
+		}
+	}
+	
 	public static void preCommunicationHelper(int from_pid, int from_uid, int to_pid, int to_uid, int size_in_bytes, int taint_tag) {
 	    if (flow_graph_reference == null) {
 	        flow_graph_reference = (IFlowGraph) ServiceManager.getService("flowgraph");
@@ -134,24 +173,6 @@ public class FlowGraphService extends IFlowGraph.Stub {
             e.printStackTrace();
         }
 	}
-	/*
-	private void deleteInfoNodes(String node_id) {
-	    final ArrayList<String> nodesToDelete = getInfoNodes(node_id);
-	    
-	    if (!nodesToDelete.isEmpty()) {
-	        StringBuilder delete_nodes_json = new StringBuilder();
-	        delete_nodes_json.append("{\"dn\":{\"");
-            delete_nodes_json.append(nodesToDelete.get(0));
-            delete_nodes_json.append("\":{}}}");
-	        
-	        for (int n = 1; n < nodesToDelete.size(); n++) {
-	            delete_nodes_json.append("\r{\"dn\":{\"");
-	            delete_nodes_json.append(nodesToDelete.get(n));
-	            delete_nodes_json.append("\":{}}}");
-	        }
-	        sendGraphUpdate(delete_nodes_json.toString());
-	    }
-	}*/
 
 	@Override
 	synchronized public void spawnProcess(final int pid, int uid) {
@@ -190,6 +211,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 	    if (taint_tag != 0) {
 	    	for (int i = 0; i < 17; i++) {
 	    		if (((taint_tag >> i) & 1) == 1) {
+	    			Log.w(TAG, "addCommunicationTraffic(" + from_uid + ", " + to_uid + ", " + (int) Math.pow(2, i) + ", " + size_in_bytes + ")");
 	    			addCommunicationTraffic(from_uid, to_uid, (int) Math.pow(2, i), size_in_bytes);
 	    		}
 	    	}
@@ -209,7 +231,7 @@ public class FlowGraphService extends IFlowGraph.Stub {
 			// add process names to sandboxes
 			for (Integer pid : running_processes.get(uid)) {
 				String pidStr = "processname_" + pid;
-				dotGraph.append(pidStr + " [[shape=box, label=\"" + process_names.get(pid) + "\"];\n");
+				dotGraph.append(pidStr + " [shape=box, label=\"" + process_names.get(pid) + "\"];\n");
 				dotGraph.append(sandboxStr + " -> " + pidStr + " [dir=none];\n");
 			}
 		}
